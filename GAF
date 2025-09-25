@@ -1,0 +1,64 @@
+FUNCTION GetAvailableFlights RETURN SYS_REFCURSOR IS
+    v_cursor SYS_REFCURSOR;
+    v_flight_id Test_Flights.FLIGHT_ID%TYPE;
+    v_flight_no Test_Flights.FLIGHT_NO%TYPE;
+    v_scheduled_departure Test_Flights.SCHEDULED_DEPARTURE%TYPE;
+    v_scheduled_arrival Test_Flights.SCHEDULED_ARRIVAL%TYPE;
+    v_status Test_Flights.STATUS%TYPE;
+    v_available_seats NUMBER;
+BEGIN
+    OPEN v_cursor FOR
+        SELECT 
+            f.flight_id,
+            f.flight_no,
+            f.scheduled_departure,
+            f.scheduled_arrival,
+            f.status,
+            f.seats_total - NVL(COUNT(tf.ticket_no), 0) AS available_seats
+        FROM Test_Flights f
+        LEFT JOIN Test_Ticket_flights tf ON f.flight_id = tf.flight_id
+        WHERE f.status NOT IN ('Cancelled', 'Departed')
+        GROUP BY f.flight_id, f.flight_no, f.scheduled_departure, f.scheduled_arrival, f.status, f.seats_total
+        HAVING (f.seats_total - NVL(COUNT(tf.ticket_no), 0)) > 0;
+
+    -- Вывод данных без закрытия курсора
+    DBMS_OUTPUT.PUT_LINE('Available Flights:');
+    LOOP
+        FETCH v_cursor INTO 
+            v_flight_id, 
+            v_flight_no, 
+            v_scheduled_departure, 
+            v_scheduled_arrival, 
+            v_status, 
+            v_available_seats;
+        EXIT WHEN v_cursor%NOTFOUND;
+
+        DBMS_OUTPUT.PUT_LINE(
+            'Flight ID: ' || v_flight_id || 
+            ', Flight No: ' || v_flight_no || 
+            ', Available Seats: ' || v_available_seats
+        );
+    END LOOP;
+
+    -- Возвращаем курсор в исходное положение
+    IF v_cursor%ISOPEN THEN
+        CLOSE v_cursor;
+    END IF;
+
+    -- Повторно открываем курсор для внешнего использования
+    OPEN v_cursor FOR
+        SELECT 
+            f.flight_id,
+            f.flight_no,
+            f.scheduled_departure,
+            f.scheduled_arrival,
+            f.status,
+            f.seats_total - NVL(COUNT(tf.ticket_no), 0) AS available_seats
+        FROM Test_Flights f
+        LEFT JOIN Test_Ticket_flights tf ON f.flight_id = tf.flight_id
+        WHERE f.status NOT IN ('Cancelled', 'Departed')
+        GROUP BY f.flight_id, f.flight_no, f.scheduled_departure, f.scheduled_arrival, f.status, f.seats_total
+        HAVING (f.seats_total - NVL(COUNT(tf.ticket_no), 0)) > 0;
+
+    RETURN v_cursor;
+END GetAvailableFlights;
