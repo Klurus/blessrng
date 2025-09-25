@@ -1,0 +1,50 @@
+CREATE OR REPLACE PACKAGE BODY AirportManagementPackage AS 
+    FUNCTION GenerateTravelReport(
+        start_date DATE,
+        end_date DATE
+    ) RETURN SYS_REFCURSOR 
+    IS
+        report_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN report_cursor FOR
+            WITH FlightStats AS ( -- общее кол-во пассажиров за период
+                SELECT COUNT(DISTINCT t.passenger_id) AS total_passengers
+                FROM avia.flights f
+                JOIN avia.ticket_flights tf ON f.flight_id = tf.flight_id
+                JOIN avia.tickets t ON tf.ticket_no = t.ticket_no
+                WHERE f.scheduled_departure BETWEEN start_date AND end_date
+            ),
+            PopularDestinations AS ( -- топ 3 направлений (аэропорт прилета) по кол-ву рейсов
+                SELECT f.arrival_airport, COUNT(*) AS flight_count
+                FROM avia.flights f
+                WHERE f.scheduled_departure BETWEEN start_date AND end_date
+                GROUP BY f.arrival_airport
+                ORDER BY flight_count DESC
+                FETCH FIRST 3 ROWS ONLY
+            ),
+            DelayedOrCancelled AS ( -- топ 3 аэропорта вылета с задержками/отменами
+                SELECT f.departure_airport, COUNT(*) AS delay_cancel_count
+                FROM avia.flights f
+                WHERE f.scheduled_departure BETWEEN start_date AND end_date
+                AND (f.status IN ('Delayed', 'Cancelled')) 
+                GROUP BY f.departure_airport
+                ORDER BY delay_cancel_count DESC
+                FETCH FIRST 3 ROWS ONLY
+            )
+            ---- в отчет объединяяю пассажиры/топ-напрвления/задержки
+            SELECT 
+                'Total Passengers' AS report_type, 
+                CAST(fs.total_passengers AS VARCHAR2(50)) AS report_value -- перевожу число в текст
+            FROM FlightStats fs
+            UNION ALL
+            SELECT 
+                'Popular Destination: ' || pd.arrival_airport, 
+                CAST(pd.flight_count AS VARCHAR2(50))
+            FROM PopularDestinations pd
+            UNION ALL
+            SELECT 
+                'Most Delayed/Cancelled: ' || dc.departure_airport, 
+                CAST(dc.delay_cancel_count AS VARCHAR2(50))
+            FROM DelayedOrCancelled dc;
+        RETURN report_cursor;
+    END GenerateTravelReport;
