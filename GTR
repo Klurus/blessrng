@@ -1,363 +1,40 @@
---создаём временную таблицу чтобы не затереть исходные
-create table my_flights as select * from avia.flights;
-
-
---функция создания инкремента
-DECLARE
-  v_new_start NUMBER;
+CREATE OR REPLACE FUNCTION GetDistanceKm(
+airport_code1 VARCHAR2,
+airport_code2 VARCHAR2
+) RETURN NUMBER IS
+lon1 NUMBER;
+lat1 NUMBER;
+lon2 NUMBER;
+lat2 NUMBER;
+dist NUMBER;
+pi CONSTANT NUMBER := ACOS(-1);
 BEGIN
-  
-  SELECT NVL(MAX(flight_id), 0) + 1 INTO v_new_start FROM my_flights;
-  
+EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_NUMERIC_CHARACTERS = ''.,''';
+SELECT
+TO_NUMBER(REGEXP_SUBSTR(coordinates, '[-0-9.]+', 1, 1)),
+TO_NUMBER(REGEXP_SUBSTR(coordinates, '[-0-9.]+', 1, 2))
+INTO lon1, lat1
+FROM airports_data
+WHERE airport_code = airport_code1;
 
-  BEGIN
-    EXECUTE IMMEDIATE 'DROP SEQUENCE flights_seq';
-  EXCEPTION
-    WHEN OTHERS THEN
-      NULL;
-  END;
-  
-  
-  EXECUTE IMMEDIATE 'CREATE SEQUENCE flights_seq START WITH ' || v_new_start ||
-                    ' INCREMENT BY 1 NOCACHE NOCYCLE';
-  
-  DBMS_OUTPUT.PUT_LINE('Создан инкремент flights_seq, начальное значение ' || v_new_start);
-END;
-/
+SELECT
+TO_NUMBER(REGEXP_SUBSTR(coordinates, '[-0-9.]+', 1, 1)),
+TO_NUMBER(REGEXP_SUBSTR(coordinates, '[-0-9.]+', 1, 2))
+INTO lon2, lat2
+FROM airports_data
+WHERE airport_code = airport_code2;
 
-set serveroutput on;
+dist := 6371 * ACOS(
+COS(lat1 * pi / 180) * COS(lat2 * pi / 180) *
+COS((lon2 - lon1) * pi / 180) +
+SIN(lat1 * pi / 180) * SIN(lat2 * pi / 180)
+);
+RETURN dist;
+END GetDistanceKm;
 
---создание пакета FlightManagementPackage
-CREATE OR REPLACE PACKAGE FlightManagementPackage AUTHID DEFINER AS
-    TYPE flight_refcursor IS REF CURSOR;
+SELECT *FROM AIRCRAFTS_DATA ;
 
-    FUNCTION GetAvailableFlights(
-        start_date DATE,
-        end_date DATE,
-        departure_airport_code VARCHAR2
-    ) RETURN flight_refcursor;
-
-    FUNCTION GetDistanceKm(
-        airport_code1 VARCHAR2,
-        airport_code2 VARCHAR2
-    ) RETURN NUMBER;
-    
-    PROCEDURE AddNewFlight(
-        p_flight_no             IN avia.flights.flight_no%TYPE,
-        p_scheduled_departure   IN avia.flights.scheduled_departure%TYPE,
-        p_scheduled_arrival     IN avia.flights.scheduled_arrival%TYPE,
-        p_departure_airport     IN avia.flights.departure_airport%TYPE,
-        p_arrival_airport       IN avia.flights.arrival_airport%TYPE,
-        p_status                IN avia.flights.status%TYPE,
-        p_aircraft_code         IN avia.flights.aircraft_code%TYPE
-    );
-    
-    FUNCTION MyFunction(
-        p_flight_no   IN VARCHAR2,
-        p_start_date  IN DATE,
-        p_end_date    IN DATE
-    ) RETURN VARCHAR2;
-
-    FUNCTION GetTopSpenderByCity(
-        p_airport_code IN VARCHAR2,
-        p_start_date   IN DATE,
-        p_end_date     IN DATE
-    ) RETURN VARCHAR2;
+SELECT round(GetDistanceKm('LED','VVO'),3) FROM dual;
 
 
-END FlightManagementPackage;
-/
-
-
---создание тела пакета FlightManagementPackage
-CREATE OR REPLACE PACKAGE BODY FlightManagementPackage AS
-
-    FUNCTION GetAvailableFlights(
-        start_date DATE,
-        end_date DATE,
-        departure_airport_code VARCHAR2
-    ) RETURN flight_refcursor IS
-        flights flight_refcursor;
-    BEGIN
-        OPEN flights FOR
-            SELECT f.flight_id,
-                   f.flight_no,
-                   f.scheduled_departure,
-                   f.departure_airport,
-                   f.status
-            FROM avia.flights f
-            WHERE f.departure_airport = departure_airport_code
-              AND f.scheduled_departure >= start_date
-              AND f.scheduled_departure < end_date + 1
-              AND f.status IN ('Scheduled')
-              AND EXISTS (
-                    SELECT 1
-                    FROM avia.seats s
-                    JOIN avia.flights f2 ON s.aircraft_code = f2.aircraft_code
-                    WHERE f2.flight_id = f.flight_id
-                      AND s.seat_no NOT IN (
-                          SELECT seat_no 
-                          FROM avia.boarding_passes 
-                          WHERE flight_id = f.flight_id
-                      )
-              );
-        RETURN flights;
-    END GetAvailableFlights;
-
-    FUNCTION GetDistanceKm(
-        airport_code1 VARCHAR2,
-        airport_code2 VARCHAR2
-    ) RETURN NUMBER IS
-        lon1 NUMBER;
-        lat1 NUMBER;
-        lon2 NUMBER;
-        lat2 NUMBER;
-        dist NUMBER;
-        pi CONSTANT NUMBER := ACOS(-1);
-    BEGIN
-        EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_NUMERIC_CHARACTERS = ''.,''';
-        SELECT 
-            TO_NUMBER(REGEXP_SUBSTR(coordinates, '[-0-9.]+', 1, 1)),
-            TO_NUMBER(REGEXP_SUBSTR(coordinates, '[-0-9.]+', 1, 2))
-        INTO lon1, lat1
-        FROM avia.airports_data
-        WHERE airport_code = airport_code1;
-        
-        SELECT 
-            TO_NUMBER(REGEXP_SUBSTR(coordinates, '[-0-9.]+', 1, 1)),
-            TO_NUMBER(REGEXP_SUBSTR(coordinates, '[-0-9.]+', 1, 2))
-        INTO lon2, lat2
-        FROM avia.airports_data
-        WHERE airport_code = airport_code2;
-        
-        dist := 6371 * ACOS(
-            COS(lat1 * pi / 180) * COS(lat2 * pi / 180) *
-            COS((lon2 - lon1) * pi / 180) +
-            SIN(lat1 * pi / 180) * SIN(lat2 * pi / 180)
-        );
-        RETURN dist;
-    END GetDistanceKm;
-
-    PROCEDURE AddNewFlight(
-        p_flight_no             IN avia.flights.flight_no%TYPE,
-        p_scheduled_departure   IN avia.flights.scheduled_departure%TYPE,
-        p_scheduled_arrival     IN avia.flights.scheduled_arrival%TYPE,
-        p_departure_airport     IN avia.flights.departure_airport%TYPE,
-        p_arrival_airport       IN avia.flights.arrival_airport%TYPE,
-        p_status                IN avia.flights.status%TYPE,
-        p_aircraft_code         IN avia.flights.aircraft_code%TYPE
-    ) IS
-        v_flight_count NUMBER;
-        v_max_range NUMBER;
-        v_distance NUMBER;
-        v_new_flight_id NUMBER;
-        v_flight_no my_flights.flight_no%TYPE;
-
-CURSOR cur_flight_exists IS
-    SELECT flight_no 
-    FROM my_flights 
-    WHERE flight_no = p_flight_no
-      AND scheduled_departure = p_scheduled_departure
-      AND departure_airport = p_departure_airport
-      AND arrival_airport = p_arrival_airport;
-
-BEGIN
-    v_flight_count := 0;
-    OPEN cur_flight_exists;
-    LOOP
-        FETCH cur_flight_exists INTO v_flight_no;
-        EXIT WHEN cur_flight_exists%NOTFOUND;
-        v_flight_count := v_flight_count + 1;
-    END LOOP;
-    CLOSE cur_flight_exists;
-    
-    IF v_flight_count > 0 THEN
-        DBMS_OUTPUT.PUT_LINE('Ошибка: Рейс уже существует.');
-        RETURN;
-    END IF;
-        SELECT "RANGE" 
-          INTO v_max_range
-          FROM avia.aircrafts_data 
-         WHERE aircraft_code = p_aircraft_code;
-        
-        v_distance := FlightManagementPackage.GetDistanceKm(p_departure_airport, p_arrival_airport);
-        
-        IF v_max_range < 1.2 * v_distance THEN
-            DBMS_OUTPUT.PUT_LINE('Ошибка: Дальность полёта самолёта недостаточна.');
-            RETURN;
-        END IF;
-        
-        INSERT INTO my_flights (
-            flight_id, 
-            flight_no, 
-            scheduled_departure, 
-            scheduled_arrival, 
-            departure_airport, 
-            arrival_airport, 
-            status, 
-            aircraft_code
-        ) VALUES (
-            flights_seq.NEXTVAL,
-            p_flight_no, 
-            p_scheduled_departure, 
-            p_scheduled_arrival, 
-            p_departure_airport, 
-            p_arrival_airport, 
-            p_status, 
-            p_aircraft_code
-        )
-        RETURNING flight_id INTO v_new_flight_id;
-        
-        DBMS_OUTPUT.PUT_LINE('Рейс успешно добавлен. Flight ID: ' || v_new_flight_id);
-        
-    EXCEPTION
-        WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('Ошибка: ' || SQLERRM);
-            RETURN;
-    END AddNewFlight;
-
-    FUNCTION MyFunction(
-        p_flight_no   IN VARCHAR2,
-        p_start_date  IN DATE,
-        p_end_date    IN DATE
-    ) RETURN VARCHAR2 IS
-        v_revenue NUMBER;
-    v_dep_airport avia.flights.departure_airport%TYPE;
-    v_arr_airport avia.flights.arrival_airport%TYPE;
-    v_result      VARCHAR2(256);
-    BEGIN
-        SELECT NVL(SUM(tf.amount), 0)
-          INTO v_revenue
-          FROM avia.ticket_flights tf
-          JOIN avia.flights f ON tf.flight_id = f.flight_id
-          JOIN avia.tickets t ON tf.ticket_no = t.ticket_no
-          JOIN avia.bookings b ON t.book_ref = b.book_ref
-         WHERE f.flight_no = p_flight_no
-           AND b.book_date BETWEEN p_start_date AND p_end_date;
-           
-    SELECT departure_airport, arrival_airport
-      INTO v_dep_airport, v_arr_airport
-      FROM avia.flights
-      WHERE flight_no = p_flight_no
-        AND ROWNUM = 1;
-            v_result :=   TO_CHAR(v_revenue) ||','||p_flight_no  ||','|| v_dep_airport ||','|| v_arr_airport;
-        RETURN v_result;
-    EXCEPTION
-        WHEN OTHERS THEN
-            RETURN 0;
-    END MyFunction;
-
-
-    
-    FUNCTION GetTopSpenderByCity(
-        p_airport_code IN VARCHAR2,
-        p_start_date   IN DATE,
-        p_end_date     IN DATE
-    ) RETURN VARCHAR2 IS
-        v_top_spender VARCHAR2(128);
-        v_count       NUMBER;
-    BEGIN
-        SELECT COUNT(*) 
-          INTO v_count
-          FROM avia.airports_data
-         WHERE airport_code = p_airport_code;
-        IF v_count = 0 THEN
-            RAISE_APPLICATION_ERROR(
-              -20030,
-              'Неизвестный код аэропорта: ' || p_airport_code
-            );
-        END IF;
-    
-        BEGIN
-          SELECT passenger_name
-            INTO v_top_spender
-          FROM (
-            SELECT
-              t.passenger_name,
-              SUM(tf.amount) AS total_spent
-            FROM avia.tickets       t
-            JOIN avia.ticket_flights tf ON t.ticket_no = tf.ticket_no
-            JOIN avia.flights        f  ON tf.flight_id    = f.flight_id
-            WHERE f.departure_airport = p_airport_code
-              AND f.scheduled_departure BETWEEN p_start_date AND p_end_date
-            GROUP BY t.passenger_name
-            ORDER BY total_spent DESC
-          ) top_spenders
-          WHERE ROWNUM = 1;
-        EXCEPTION
-          WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(
-              -20031,
-              'Нет данных о тратах из аэропорта ' || p_airport_code || ' за период ' || TO_CHAR(p_start_date,'DD.MM.YYYY') || '–' || TO_CHAR(p_end_date,'DD.MM.YYYY')
-            );
-        END;
-    
-        RETURN v_top_spender;
-    END GetTopSpenderByCity;
-
-
-
-END FlightManagementPackage;
-/
-
---пример использования функции GetAvailableFlights
-VAR flights REFCURSOR;
-
-BEGIN
-    :flights := FlightManagementPackage.GetAvailableFlights(
-        TO_DATE('2017-09-05', 'YYYY-MM-DD'),
-        TO_DATE('2017-09-09', 'YYYY-MM-DD'),
-        'SVO'
-    );
-END;
-/
-PRINT flights;
-
-
---пример использования функции GetDistanceKm
-SELECT round(FlightManagementPackage.GetDistanceKm('SVO', 'VVO'),3) AS distance FROM dual;
-
-
-SET SERVEROUTPUT ON;
-
---пример использования процедуры AddNewFlight 
-BEGIN
-    FlightManagementPackage.AddNewFlight(
-        p_flight_no             => 'PG7',
-        p_scheduled_departure   => TO_DATE('15.09.17 10:00:00', 'DD.MM.RR HH24:MI:SS'),
-        p_scheduled_arrival     => TO_DATE('15.09.17 18:00:00', 'DD.MM.RR HH24:MI:SS'),
-        p_departure_airport     => 'SVO',
-        p_arrival_airport       => 'LED',
-        p_status                => 'Scheduled',
-        p_aircraft_code         => 'SU9'
-    );
-END;
-/
-select * from my_flights;
-delete from my_flights where flight_no='PG7';
-
-
---пример использования доп функции которая считает выручку реса за определённый диапазон дат
-SELECT FlightManagementPackage.MyFunction(
-         'PG0134', 
-         TO_DATE('10.07.17 00:00:00', 'DD.MM.RR HH24:MI:SS'),
-         TO_DATE('28.07.17 23:59:59', 'DD.MM.RR HH24:MI:SS')
-       ) as revenue
-FROM dual;
-
-
-SET SERVEROUTPUT ON;
-DECLARE
-  v_name VARCHAR2(128);
-BEGIN
-  v_name := GetTopSpenderByCity(
-    p_airport_code => 'SVO',
-    p_start_date   => TO_DATE('2017-01-01','YYYY-MM-DD'),
-    p_end_date     => TO_DATE('2025-04-30','YYYY-MM-DD')
-  );
-  DBMS_OUTPUT.PUT_LINE(CHR(10)||v_name || ' больше всех потратил(-а).');
-EXCEPTION
-  WHEN OTHERS THEN
-    DBMS_OUTPUT.PUT_LINE(CHR(10)||'Ошибка: ' || SQLERRM);
-END;
-/
+6534,y,n
