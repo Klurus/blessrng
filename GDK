@@ -14,14 +14,14 @@ FUNCTION GetDistanceKm(
             TO_NUMBER(REGEXP_SUBSTR(coordinates, '[-0-9.]+', 1, 1)),
             TO_NUMBER(REGEXP_SUBSTR(coordinates, '[-0-9.]+', 1, 2))
         INTO lon1, lat1
-        FROM avia.airports_data
+        FROM airports_data
         WHERE airport_code = airport_code1;
         
         SELECT 
             TO_NUMBER(REGEXP_SUBSTR(coordinates, '[-0-9.]+', 1, 1)),
             TO_NUMBER(REGEXP_SUBSTR(coordinates, '[-0-9.]+', 1, 2))
         INTO lon2, lat2
-        FROM avia.airports_data
+        FROM airports_data
         WHERE airport_code = airport_code2;
         
         dist := 6371 * ACOS(
