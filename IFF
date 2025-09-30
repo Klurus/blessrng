@@ -23,5 +23,5 @@ END IsFlightFull;
 
 SELECT IsFlightFull(1185) from dual;
 
-SELECT count(*) from avia.flights;
+SELECT count(*) from flights;
 WHERE flight_id<400 and IsFlightFull(flight_id)=1
