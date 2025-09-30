@@ -39,4 +39,4 @@ END;
 
 SELECT round(FlightManagementPackage.GetDistanceKm('SVO', 'VVO'),3) AS distance FROM dual;
 
-0,y,n
+6534,y,n
