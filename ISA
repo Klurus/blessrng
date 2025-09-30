@@ -3,7 +3,7 @@ CREATE OR REPLACE FUNCTION IsSeatAvailable(in_passenger_id IN VARCHAR2, in_fligh
 IS
 	elem varchar2(100);
 	CURSOR cur IS
-	SELECT SEAT_NO FROM AVIA.BOARDING_PASSES bp
+	SELECT SEAT_NO FROM BOARDING_PASSES bp
 	WHERE bp.SEAT_NO = in_seat_no AND bp.FLIGHT_ID = in_flight_id;
 
 BEGIN
@@ -39,4 +39,4 @@ SELECT *FROM AVIA.BOARDING_PASSES bp
 SELECT *FROM AVIA.BOARDING_PASSES bp
 	WHERE SEAT_NO = '10A' AND FLIGHT_ID = '1'; -- отсутсвует значит можно юранировать
 
-y,n
+n,y,n
